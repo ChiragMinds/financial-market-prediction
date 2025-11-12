@@ -1,102 +1,120 @@
 # src/evaluate.py
+"""
+Evaluation script: loads saved models and computes metrics & example forecasts.
+Usage:
+python src/evaluate.py --tickers "AAPL,GOOG,MSFT,AMZN" --start 2018-01-01 --end 2023-12-31 --window 50 --steps 5
+"""
+
 import argparse
-import numpy as np
 import os
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from tensorflow.keras.models import load_model
-from src.data import download_close_prices, prepare_series_arrays
+from src.data import download_close_prices, prepare_series_arrays, fetch_stock_data
+from src.data import prepare_series_arrays  # ensure correct import
 import math
 
 def directional_accuracy(y_true, y_pred):
-    y_true = np.array(y_true); y_pred = np.array(y_pred)
-    return np.mean(np.sign(np.diff(y_true)) == np.sign(np.diff(y_pred)))
+    """
+    Compute directional accuracy (%) comparing successive steps.
+    y_true, y_pred: arrays shape (steps,)
+    """
+    if len(y_true) <= 1 or len(y_pred) <= 1:
+        return 0.0
+    return np.mean(np.sign(np.diff(y_true)) == np.sign(np.diff(y_pred))) * 100.0
 
-def load_models_and_predict(tickers, window=50, steps=5, start='2018-01-01', end='2023-12-31', model_dir='models', sample_count=100, results_dir='results'):
-    df = download_close_prices(tickers, start=start, end=end)
+def evaluate_models(tickers, window=50, steps=5, start='2018-01-01', end='2023-12-31',
+                    model_dir='models', results_dir='results', sample_count=100):
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Fetch series and prepare arrays
+    df = fetch_stock_data(tickers=tickers, start=start, end=end, plot=False)
     X_dict, y_dict, scalers, raw = prepare_series_arrays(df, window_size=window, steps_ahead=steps)
 
-    metrics_summary = {}
-    os.makedirs(results_dir, exist_ok=True)
+    summary = {}
 
     for ticker in tickers:
         if ticker not in X_dict:
-            print(f"Skipping {ticker}: no data available in prepared arrays.")
+            print(f"Skipping {ticker}: no data windows prepared.")
             continue
+
         model_path = os.path.join(model_dir, f"{ticker}_model.h5")
         if not os.path.exists(model_path):
-            print(f"Model not found for {ticker}: {model_path}")
+            print(f"Model {model_path} not found. Skipping {ticker}.")
             continue
 
-        model = load_model(model_path, compile=False)  # compile False since custom loss may not be available here
-        X_vis = X_dict[ticker][:sample_count]
-        y_vis = y_dict[ticker][:sample_count]
-        y_pred = model.predict(X_vis)
+        model = load_model(model_path, compile=False)
 
-        mae_list, rmse_list, mape_list, da_list = [], [], [], []
-        for i in range(len(y_vis)):
-            y_t = y_vis[i]
-            y_p = y_pred[i]
-            mae_list.append(mean_absolute_error(y_t, y_p))
-            rmse_list.append(math.sqrt(mean_squared_error(y_t, y_p)))
-            mape_list.append(np.mean(np.abs((y_t - y_p) / (y_t + 1e-5))) * 100)
-            da_list.append(directional_accuracy(y_t, y_p) * 100)
+        X = X_dict[ticker]
+        y = y_dict[ticker]
 
-        metrics_summary[ticker] = {
-            'MAE': np.mean(mae_list),
-            'RMSE': np.mean(rmse_list),
-            'MAPE (%)': np.mean(mape_list),
-            'Directional Accuracy (%)': np.mean(da_list)
+        # limit samples for quick evaluation
+        n = min(sample_count, X.shape[0])
+        X_s = X[:n]
+        y_s = y[:n]
+
+        preds = model.predict(X_s)
+
+        mae_vals, rmse_vals, mape_vals, da_vals = [], [], [], []
+
+        for i in range(len(y_s)):
+            true = y_s[i]
+            pred = preds[i]
+            mae = mean_absolute_error(true, pred)
+            rmse = math.sqrt(mean_squared_error(true, pred))
+            mape = np.mean(np.abs((true - pred) / (true + 1e-8))) * 100.0
+            da = directional_accuracy(true, pred)
+
+            mae_vals.append(mae)
+            rmse_vals.append(rmse)
+            mape_vals.append(mape)
+            da_vals.append(da)
+
+        summary[ticker] = {
+            'MAE': float(np.mean(mae_vals)),
+            'RMSE': float(np.mean(rmse_vals)),
+            'MAPE (%)': float(np.mean(mape_vals)),
+            'Directional Accuracy (%)': float(np.mean(da_vals))
         }
 
-        # Save sample forecast plots (first 3)
-        for i in range(min(3, len(y_vis))):
-            plt.figure(figsize=(8,3))
-            plt.plot(range(steps), y_vis[i], label="Actual", marker='o')
-            plt.plot(range(steps), y_pred[i], label="Predicted", marker='o')
-            plt.title(f"{ticker} Forecast Sample {i+1}")
-            plt.xlabel("Step ahead")
-            plt.ylabel("Scaled Price")
+        # Plot sample forecasts (first 3)
+        for i in range(min(3, len(y_s))):
+            plt.figure(figsize=(6,3))
+            plt.plot(range(steps), y_s[i], marker='o', label='Actual')
+            plt.plot(range(steps), preds[i], marker='o', label='Predicted')
+            plt.title(f"{ticker} Forecast sample {i+1}")
+            plt.xlabel("Steps ahead")
+            plt.ylabel("Scaled price")
             plt.legend()
-            plt.grid(True)
-            plt.savefig(os.path.join(results_dir, f"{ticker}_forecast_{i+1}.png"), bbox_inches='tight')
+            fname = os.path.join(results_dir, f"{ticker}_forecast_{i+1}.png")
+            plt.savefig(fname, bbox_inches='tight')
             plt.close()
 
-    # Comparative bar chart
-    tickers_evaluated = list(metrics_summary.keys())
-    mae_scores = [metrics_summary[t]['MAE'] for t in tickers_evaluated]
-    rmse_scores = [metrics_summary[t]['RMSE'] for t in tickers_evaluated]
-    mape_scores = [metrics_summary[t]['MAPE (%)'] for t in tickers_evaluated]
-    da_scores = [metrics_summary[t]['Directional Accuracy (%)'] for t in tickers_evaluated]
-
-    metrics = ['MAE', 'RMSE', 'MAPE (%)', 'Directional Accuracy (%)']
-    data = [mae_scores, rmse_scores, mape_scores, da_scores]
-
-    plt.figure(figsize=(12,6))
-    for i, metric in enumerate(metrics):
-        plt.subplot(1, 4, i+1)
-        plt.bar(tickers_evaluated, data[i], color='skyblue')
-        plt.title(metric)
-        plt.xticks(rotation=45)
+    # comparative bar chart
+    tickers_evaluated = list(summary.keys())
+    if len(tickers_evaluated) > 0:
+        metrics = ['MAE', 'RMSE', 'MAPE (%)', 'Directional Accuracy (%)']
+        plt.figure(figsize=(14, 4))
+        for i, metric in enumerate(metrics):
+            plt.subplot(1, 4, i+1)
+            values = [summary[t][metric] for t in tickers_evaluated]
+            plt.bar(tickers_evaluated, values, color='skyblue')
+            plt.title(metric)
+            plt.xticks(rotation=45)
         plt.tight_layout()
+        plt.savefig(os.path.join(results_dir, 'comparative_metrics.png'), bbox_inches='tight')
+        plt.close()
 
-    plt.suptitle("Comparative Analysis of Stock Prediction Metrics", fontsize=14, y=1.05)
-    plt.savefig(os.path.join(results_dir, "comparative_metrics.png"), bbox_inches='tight')
-    plt.close()
+    # print summary
+    for t in summary:
+        print(f"\n{t}:")
+        for k, v in summary[t].items():
+            print(f"  {k}: {v:.4f}")
 
-    # print metrics summary
-    for t in tickers_evaluated:
-        m = metrics_summary[t]
-        print(f"\nEvaluation for {t}:")
-        print(f"MAE:  {m['MAE']:.4f}")
-        print(f"RMSE: {m['RMSE']:.4f}")
-        print(f"MAPE: {m['MAPE (%)']:.2f}%")
-        print(f"Directional Accuracy: {m['Directional Accuracy (%)']:.2f}%")
-
-    return metrics_summary
+    return summary
 
 if __name__ == "__main__":
-    import argparse
     p = argparse.ArgumentParser()
     p.add_argument("--tickers", type=str, default="AAPL,GOOG,MSFT,AMZN")
     p.add_argument("--start", type=str, default="2018-01-01")
@@ -105,8 +123,10 @@ if __name__ == "__main__":
     p.add_argument("--steps", type=int, default=5)
     p.add_argument("--model_dir", type=str, default="models")
     p.add_argument("--results_dir", type=str, default="results")
+    p.add_argument("--sample_count", type=int, default=100)
     args = p.parse_args()
 
     tickers = [t.strip().upper() for t in args.tickers.split(",")]
-    load_models_and_predict(tickers, window=args.window, steps=args.steps, start=args.start, end=args.end,
-                            model_dir=args.model_dir, sample_count=100, results_dir=args.results_dir)
+    evaluate_models(tickers, window=args.window, steps=args.steps,
+                    start=args.start, end=args.end, model_dir=args.model_dir,
+                    results_dir=args.results_dir, sample_count=args.sample_count)
