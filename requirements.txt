@@ -1,7 +1,8 @@
+yfinance
+tensorflow>=2.10
+scikit-learn
 numpy
 pandas
 matplotlib
-torch
-scikit-learn
-tqdm
 seaborn
+tqdm
