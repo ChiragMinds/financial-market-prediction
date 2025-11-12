@@ -2,14 +2,9 @@
   <img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python" />
   <img src="https://img.shields.io/badge/Framework-TensorFlow-orange.svg" alt="TensorFlow" />
   <img src="https://img.shields.io/badge/License-All--Rights--Reserved-red.svg" alt="License" />
-  <img src="https://img.shields.io/github/stars/<your-username>/lstm-financial-prediction?style=social" alt="GitHub stars" />
 </p>
 
 <h1 align="center">📈 LSTM Networks for Financial Market Prediction</h1>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/<your-username>/lstm-financial-prediction/main/docs/hero.png" alt="Project hero image" width="800" />
-</p>
 
 ---
 
@@ -73,7 +68,6 @@ lstm-financial-prediction/
 ## Authors and contacts
 
 - **Chirag Chauhan** — primary contact: <chiragchauhan1401@gmail.com>  
-- Collaborators: Himanshi Borad, Dhvani Maktuporia, Mayuri A. Mehta, Dheeraj Kumar Singh
 
 If you’d like to reproduce experiments or request permission to reuse the code, please contact the primary author.
 
