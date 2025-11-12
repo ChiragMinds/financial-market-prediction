@@ -1,9 +1,9 @@
-# Python cache
+# Byte-compiled / cache files
 __pycache__/
 *.py[cod]
 *.so
 
-# Virtual environments
+# Virtualenvs
 .venv/
 env/
 venv/
@@ -13,16 +13,19 @@ venv/
 *.ipynb
 
 # Data and models
-data/
 models/
 results/
+data/
 *.csv
 *.h5
 *.pt
 *.pth
 
-# OS / IDE files
+# Logs
+*.log
+tensorboard_logs/
+
+# OS / IDE
 .DS_Store
-Thumbs.db
 .vscode/
 .idea/
