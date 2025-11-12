@@ -1,36 +1,45 @@
 # src/utils.py
 import os
-import torch
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+import joblib
 
 def save_model(model, path):
+    """
+    Save Keras model to disk (HDF5) and print confirmation.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(model.state_dict(), path)
-    print(f"Saved model to {path}")
+    model.save(path)
+    print(f" Model saved to {path}")
 
-def load_model(model, path, device='cpu'):
-    model.load_state_dict(torch.load(path, map_location=device))
-    model.to(device)
-    model.eval()
-    return model
+def save_history(history, path):
+    """
+    Save training history dictionary (Keras History.history) to numpy file.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    np.save(path, np.array(history, dtype=object))
+    print(f" History saved to {path}")
 
-def plot_losses(train_losses, val_losses, save_path=None):
-    plt.figure(figsize=(8,4))
-    plt.plot(train_losses, label='train')
-    plt.plot(val_losses, label='val')
+def plot_loss(history, save_path):
+    """Plot training and validation loss from a Keras History object."""
+    plt.figure(figsize=(8, 4))
+    plt.plot(history.history.get('loss', []), label='train')
+    plt.plot(history.history.get('val_loss', []), label='val')
     plt.xlabel('Epoch')
-    plt.ylabel('Loss (MSE)')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
     plt.legend()
     plt.grid(True)
-    if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, bbox_inches='tight')
-        print(f"Saved loss plot to {save_path}")
-    else:
-        plt.show()
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+    print(f" Loss plot saved to {save_path}")
 
-def inverse_scale(scaler, arr):
-    # arr shape: (n,1) or (1,)
-    a = np.array(arr).reshape(-1,1)
-    return scaler.inverse_transform(a).flatten()
+def save_scaler(scaler, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    joblib.dump(scaler, path)
+    print(f" Scaler saved to {path}")
+
+def load_scaler(path):
+    return joblib.load(path)
