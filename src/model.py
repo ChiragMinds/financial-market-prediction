@@ -1,22 +1,35 @@
 # src/model.py
+"""
+Model module: builds the Keras model architecture used in the notebook.
+Architecture: Conv1D -> MaxPool -> Bidirectional LSTMs -> Attention -> Dense
+Includes the custom directional-aware loss used in the notebook.
+"""
+
 import tensorflow as tf
 from tensorflow.keras.layers import Layer, Dense, Input, Dropout, Bidirectional, LSTM, Conv1D, MaxPooling1D
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 import tensorflow.keras.backend as K
 
+
 def profit_directional_loss(y_true, y_pred):
     """
-    Custom loss used in notebook:
-    MSE + 0.5 * direction mismatch penalty
+    Custom loss: MSE + direction mismatch penalty.
+    y_true and y_pred shape: (batch, steps_ahead)
     """
     mse = K.mean(K.square(y_true - y_pred))
-    # compute directional differences along steps dimension
-    true_diff = y_true[:, 1:] - y_true[:, :-1]
-    pred_diff = y_pred[:, 1:] - y_pred[:, :-1]
-    mismatch = K.cast(K.not_equal(K.sign(true_diff), K.sign(pred_diff)), K.floatx())
-    direction_loss = K.mean(mismatch)
-    return mse + 0.5 * direction_loss
+    # Directional difference penalty (compare signs of successive differences)
+    # for steps_ahead > 1
+    direction_penalty = 0.0
+    if K.ndim(y_true) == 2 and K.shape(y_true)[1] > 1:
+        true_diff = y_true[:, 1:] - y_true[:, :-1]
+        pred_diff = y_pred[:, 1:] - y_pred[:, :-1]
+        # mismatch count where sign differs
+        sign_mismatch = K.not_equal(K.sign(true_diff), K.sign(pred_diff))
+        # cast to float and average
+        direction_penalty = K.mean(K.cast(sign_mismatch, K.floatx()))
+    return mse + 0.5 * direction_penalty
+
 
 class Attention(Layer):
     def __init__(self, **kwargs):
@@ -24,16 +37,19 @@ class Attention(Layer):
         self.W = Dense(1, activation='tanh')
 
     def call(self, inputs):
-        # inputs: (batch, time, features)
+        # inputs shape: (batch, time, features)
         scores = self.W(inputs)                       # (batch, time, 1)
         weights = tf.nn.softmax(scores, axis=1)       # (batch, time, 1)
         context = tf.reduce_sum(inputs * weights, axis=1)  # (batch, features)
         return context
 
+
 def build_model(window_size=50, steps_ahead=5, lr=1e-3):
     """
-    Build the model used in the notebook:
-      Conv1D -> MaxPool -> Bi-LSTM stack -> Attention -> Dense output
+    Build and compile the model.
+
+    Returns:
+      model: a compiled tf.keras.Model
     """
     input_layer = Input(shape=(window_size, 1))
 
@@ -55,4 +71,5 @@ def build_model(window_size=50, steps_ahead=5, lr=1e-3):
 
     model = Model(inputs=input_layer, outputs=output)
     model.compile(optimizer=Adam(learning_rate=lr), loss=profit_directional_loss)
+
     return model
